@@ -420,3 +420,78 @@ test('iPhone full-screen safe areas keep navigation and workout actions reachabl
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
   await expect(dialog).toHaveCount(0);
 });
+
+test('cancel workout confirms, keeps entries when dismissed, and discards without completion', async ({
+  page,
+  context,
+}) => {
+  await openApp(page);
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+  });
+  await page.reload();
+  await startStrength(page);
+  const reps = page
+    .locator('.exercise-log')
+    .first()
+    .getByRole('spinbutton', { name: 'Set 1 repetitions', exact: true });
+  await reps.fill('7');
+  await page.getByRole('button', { name: 'Cancel workout', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Cancel this workout?' })).toBeVisible();
+  await page.getByRole('button', { name: 'Keep workout', exact: true }).click();
+  await expect(reps).toHaveValue('7');
+  await page.getByRole('button', { name: 'Start rest', exact: true }).click();
+  await context.setOffline(true);
+  await page.getByRole('button', { name: 'Cancel workout', exact: true }).click();
+  await page.getByRole('button', { name: 'Discard workout', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Resume workout', exact: true })).toHaveCount(0);
+  await expect(page.locator('.resume-banner')).toHaveCount(0);
+  await navigate(page, 'Progress');
+  await page.getByRole('button', { name: 'History', exact: true }).click();
+  await expect(page.getByRole('button', { name: /^Full Body A/ })).toHaveCount(0);
+  await navigate(page, 'Today');
+  await startStrength(page);
+  await expect(reps).toHaveValue('');
+  await expect(page.getByRole('button', { name: 'Start rest', exact: true })).toBeVisible();
+});
+
+test('cancel conditioning removes saved cardio and unfinished rope entries', async ({ page }) => {
+  await openApp(page);
+  await page.getByRole('button', { name: 'Day 2: Aerobic Conditioning', exact: true }).click();
+  await page.getByRole('button', { name: 'Start workout', exact: true }).click();
+  await page.getByRole('button', { name: 'Log cardio', exact: true }).click();
+  await page.getByRole('spinbutton', { name: 'Duration (minutes)', exact: true }).fill('30');
+  await page.getByRole('button', { name: 'Save cardio', exact: true }).click();
+  await page.getByRole('button', { name: 'Log jump rope', exact: true }).click();
+  await page.getByRole('spinbutton', { name: 'Rounds completed', exact: true }).fill('5');
+  await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+  await page.getByRole('button', { name: 'Cancel workout', exact: true }).click();
+  await page.getByRole('button', { name: 'Discard workout', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
+  await navigate(page, 'Settings');
+  await page.getByRole('button', { name: /Backup & Restore Keep a copy/ }).click();
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export complete backup', exact: true }).click();
+  const file = await download;
+  const { data } = JSON.parse(await readFile((await file.path())!, 'utf8'));
+  expect(data.sessions).toEqual([]);
+  expect(data.cardio).toEqual([]);
+  expect(data.rope).toEqual([]);
+  expect(data.drafts).toEqual([]);
+});
+
+test('individual exercise cancellation preserves a different active workout', async ({ page }) => {
+  await openApp(page);
+  await startStrength(page);
+  await navigate(page, 'Exercises');
+  await page.getByRole('textbox', { name: 'Search exercises' }).fill('Farmer carry');
+  await page.getByRole('button', { name: 'Open Farmer carry', exact: true }).click();
+  await page.getByRole('spinbutton', { name: 'Set 1 weight', exact: true }).fill('20');
+  await page.getByRole('button', { name: 'Cancel workout', exact: true }).click();
+  await page.getByRole('button', { name: 'Discard workout', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Resume workout', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Full Body A', exact: true })).toBeVisible();
+});

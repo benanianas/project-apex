@@ -14,7 +14,7 @@ import {
 import { db, seed } from './storage/db';
 import { DataContext, ErrorBoundary, errorMessage, go } from './components/ui';
 import Today from './screens/Today';
-import KeyboardAccessory from './components/KeyboardAccessory';
+import KeyboardViewport from './components/KeyboardViewport';
 const Workout = lazy(() => import('./screens/Workout'));
 const Exercises = lazy(() => import('./screens/Exercises'));
 const Progress = lazy(() => import('./screens/Progress'));
@@ -207,7 +207,7 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <KeyboardAccessory />
+        <KeyboardViewport />
         {message && (
           <div className="toast" role="status">
             <span>{message}</span>

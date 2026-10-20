@@ -1528,34 +1528,13 @@ small,
   padding: 8px;
   margin-right: 10px;
 }
-.keyboard-accessory {
-  position: fixed;
-  bottom: var(--keyboard-inset, 0px);
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(100%, 480px);
-  display: flex;
-  justify-content: space-between;
-  padding: 5px 14px;
-  background: #2a3226f2;
-  backdrop-filter: blur(20px);
-  border-top: 1px solid #536445;
-  z-index: 120;
-}
-.keyboard-accessory button {
-  border: 0;
-  background: none;
-  color: var(--accent);
-  font-size: 15px;
-  min-height: 42px;
-}
 .keyboard-open .bottom-nav,
 .keyboard-open .finish-bar {
   display: none;
 }
 .keyboard-open .modal {
-  bottom: calc(var(--keyboard-inset, 0px) + 52px);
-  max-height: calc(var(--visible-height, 100dvh) - 60px);
+  bottom: calc(var(--keyboard-inset, 0px) + 10px);
+  max-height: calc(var(--visible-height, 100dvh) - 28px);
   padding-bottom: 18px;
 }
 .keyboard-open input:focus,
@@ -1563,7 +1542,7 @@ small,
   scroll-margin-block: 100px;
 }
 .keyboard-open .toast {
-  bottom: calc(var(--keyboard-inset, 0px) + 62px);
+  bottom: calc(var(--keyboard-inset, 0px) + 12px);
 }
 @keyframes sheet-enter {
   from {
@@ -1870,4 +1849,27 @@ small,
 }
 .toast button {
   pointer-events: auto;
+}
+
+.finish-bar > .cancel-workout {
+  min-height: 44px;
+  padding: 8px 6px;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  flex: 1;
+}
+.discard-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+}
+.discard-actions > button {
+  width: 100%;
+  min-height: 48px;
+}
+.exercise-inline-log > .cancel-workout {
+  width: 100%;
+  margin-top: 10px;
+  min-height: 44px;
 }

@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import { Plus, Check, Undo2, ArrowUpRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import SetEditor from '../components/SetEditor';
-import { saveSession } from '../storage/db';
+import DiscardWorkoutDialog from '../components/DiscardWorkoutDialog';
+import { discardDraftSession, saveSession } from '../storage/db';
 import {
   newSet,
   now,
@@ -43,9 +44,10 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
   const current = useRef(initial);
   const queue = useRef(Promise.resolve());
   const saveRevision = useRef(0);
+  const discarding = useRef(false);
   const [saveState, setSaveState] = useState('Saved on device');
   const [failed, setFailed] = useState(false);
-  const [modal, setModal] = useState<'add' | 'cardio' | 'rope' | 'finish' | null>(null);
+  const [modal, setModal] = useState<'add' | 'cardio' | 'rope' | 'finish' | 'discard' | null>(null);
   const [undo, setUndo] = useState<Session | null>(null);
   const [picker, setPicker] = useState(exercises.find((e) => e.category !== 'mobility')?.id ?? '');
   const [busy, setBusy] = useState(false);
@@ -60,6 +62,7 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
   );
   const focused = session.performances[focusedIndex];
   function persist(next: Session) {
+    if (discarding.current) return;
     const revision = ++saveRevision.current;
     current.current = next;
     setSession(next);
@@ -162,6 +165,19 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
       report(e);
     } finally {
       setBusy(false);
+    }
+  }
+  async function discard() {
+    discarding.current = true;
+    try {
+      // Drain pending autosaves before deletion so they cannot recreate the draft.
+      await queue.current.catch(() => {});
+      await discardDraftSession(current.current.id);
+      notify('Workout canceled. It was not counted as completed.');
+      go('today');
+    } catch (error) {
+      discarding.current = false;
+      throw error;
     }
   }
   const completedSets = session.performances.reduce((n, p) => n + workingSets(p).length, 0);
@@ -525,14 +541,25 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
         </Field>
       </div>
       <div className="finish-bar">
-        <span>
-          {completedSets > 0 ? `${completedSets} working sets saved` : 'Your session, at your pace'}
-        </span>
+        {session.status === 'draft' ? (
+          <button className="danger cancel-workout" onClick={() => setModal('discard')}>
+            Cancel workout
+          </button>
+        ) : (
+          <span>{completedSets} working sets saved</span>
+        )}
         <button className="primary" onClick={() => setModal('finish')}>
           {session.status === 'completed' ? 'Save session edits' : 'Finish workout'}
           <Check size={18} />
         </button>
       </div>
+      {modal === 'discard' && (
+        <DiscardWorkoutDialog
+          title={session.title}
+          onClose={() => setModal(null)}
+          onDiscard={discard}
+        />
+      )}
       {modal === 'add' && (
         <Modal title="Add an exercise" onClose={() => setModal(null)}>
           <Field label="Exercise">

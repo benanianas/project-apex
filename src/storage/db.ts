@@ -142,10 +142,34 @@ export async function removeSession(id: string, database = db) {
     'rw',
     [database.sessions, database.cardio, database.rope, database.drafts],
     async () => {
+      const cardioIds = await database.cardio.where('sessionId').equals(id).primaryKeys();
+      const ropeIds = await database.rope.where('sessionId').equals(id).primaryKeys();
       await database.sessions.delete(id);
       await database.cardio.where('sessionId').equals(id).delete();
       await database.rope.where('sessionId').equals(id).delete();
-      await database.drafts.bulkDelete([`cardio-${id}`, `rope-${id}`]);
+      await database.drafts.bulkDelete([
+        `cardio-${id}`,
+        `rope-${id}`,
+        ...cardioIds.map((key) => `cardio-edit-${key}`),
+        ...ropeIds.map((key) => `rope-edit-${key}`),
+      ]);
+    },
+  );
+}
+/** Discard an unfinished workout and its linked records atomically. */
+export async function discardDraftSession(id: string, database = db) {
+  await database.transaction(
+    'rw',
+    [database.sessions, database.cardio, database.rope, database.drafts, database.timers],
+    async () => {
+      const session = await database.sessions.get(id);
+      if (session && session.status !== 'draft')
+        throw new Error(
+          'This workout is already completed. Manage saved workouts in Progress → History.',
+        );
+      await removeSession(id, database);
+      const timer = await database.timers.get('rest');
+      if (timer) await database.timers.put({ ...timer, endAt: null, remaining: timer.duration });
     },
   );
 }

@@ -183,7 +183,15 @@ export function Modal({
     };
   }, []);
   return (
-    <dialog ref={ref} className="modal" aria-labelledby={titleId} onCancel={onClose}>
+    <dialog
+      ref={ref}
+      className="modal"
+      aria-labelledby={titleId}
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+    >
       <div
         className="sheet-handle"
         aria-hidden="true"

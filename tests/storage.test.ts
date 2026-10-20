@@ -4,6 +4,7 @@ import {
   ApexDB,
   clearPersonalData,
   createSession,
+  discardDraftSession,
   removeSession,
   restoreOriginal,
   saveSession,
@@ -110,6 +111,100 @@ describe('persistent sessions and snapshots', () => {
     expect(await database.sessions.count()).toBe(0);
     expect(await database.drafts.count()).toBe(0);
     expect(await database.exercises.count()).toBe(originalExercises.length);
+  });
+});
+describe('canceling unfinished workouts', () => {
+  it('discards only the selected draft and linked activities, drafts and timer state', async () => {
+    const p = makeOriginalProgram();
+    const canceled = await createSession(p, p.days[1], database);
+    const other = await createSession(p, p.days[0], database);
+    await database.settings.update('settings', { weightUnit: 'lb' });
+    const cardio = {
+      id: 'linked-cardio',
+      sessionId: canceled.id,
+      date: canceled.date,
+      activity: 'Treadmill running',
+      minutes: 30,
+      speedKmh: null,
+      distanceKm: null,
+      incline: null,
+      rpe: 4,
+      heartRate: null,
+      notes: '',
+      completed: true,
+      updatedAt: now(),
+    };
+    const rope = {
+      id: 'linked-rope',
+      sessionId: canceled.id,
+      date: canceled.date,
+      rounds: 5,
+      workSeconds: 30,
+      restSeconds: 60,
+      elapsedSeconds: null,
+      rpe: null,
+      tolerance: 'good' as const,
+      notes: '',
+      completed: true,
+      updatedAt: now(),
+    };
+    await database.cardio.bulkPut([cardio, { ...cardio, id: 'unlinked-cardio', sessionId: null }]);
+    await database.rope.bulkPut([rope, { ...rope, id: 'other-rope', sessionId: other.id }]);
+    await database.drafts.bulkPut(
+      [
+        `cardio-${canceled.id}`,
+        `rope-${canceled.id}`,
+        'cardio-edit-linked-cardio',
+        'rope-edit-linked-rope',
+        'cardio-new',
+      ].map((id) => ({ id, fields: { notes: 'draft' }, updatedAt: now() })),
+    );
+    await database.timers.put({
+      id: 'rest',
+      duration: 180,
+      remaining: 180,
+      endAt: Date.now() + 180000,
+    });
+    await discardDraftSession(canceled.id, database);
+    expect(await database.sessions.get(canceled.id)).toBeUndefined();
+    expect(await database.sessions.get(other.id)).toEqual(other);
+    expect((await database.cardio.toArray()).map((c) => c.id)).toEqual(['unlinked-cardio']);
+    expect((await database.rope.toArray()).map((r) => r.id)).toEqual(['other-rope']);
+    expect((await database.drafts.toArray()).map((d) => d.id)).toEqual(['cardio-new']);
+    expect(await database.timers.get('rest')).toMatchObject({ endAt: null, remaining: 180 });
+    expect((await database.settings.get('settings'))?.weightUnit).toBe('lb');
+    expect(await database.programs.count()).toBe(1);
+  });
+  it('refuses to cancel completed history', async () => {
+    const p = makeOriginalProgram();
+    const session = await createSession(p, p.days[0], database);
+    await saveSession({ ...session, status: 'completed', finishedAt: now() }, database);
+    await expect(discardDraftSession(session.id, database)).rejects.toThrow('already completed');
+    expect((await database.sessions.get(session.id))?.status).toBe('completed');
+  });
+  it('rolls back deletion if resetting the timer fails', async () => {
+    const p = makeOriginalProgram();
+    const session = await createSession(p, p.days[0], database);
+    await database.drafts.put({
+      id: `cardio-${session.id}`,
+      fields: { minutes: '12' },
+      updatedAt: now(),
+    });
+    await database.timers.put({
+      id: 'rest',
+      duration: 120,
+      remaining: 120,
+      endAt: Date.now() + 120000,
+    });
+    database.timers.hook('updating', () => {
+      throw new Error('Simulated write failure');
+    });
+    await expect(discardDraftSession(session.id, database)).rejects.toThrow(
+      'Simulated write failure',
+    );
+    expect(await database.sessions.get(session.id)).toEqual(session);
+    expect(await database.drafts.get(`cardio-${session.id}`)).toBeDefined();
+    expect((await database.timers.get('rest'))?.endAt).not.toBeNull();
   });
 });
 describe('complete, validated backup restoration', () => {

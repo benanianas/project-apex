@@ -4,7 +4,7 @@ An installable, offline-first personal strength and conditioning tracker. React 
 
 APEX includes the original seven-day foundation block: three full-body sessions (23/24/24 working sets), two conditioning sessions, active recovery, and complete rest. Days are numbered and freely selectable. Reporting weeks begin Wednesday by default.
 
-Designed around iPhone 17 Pro: a single-column app shell, safe-area-aware bottom tabs, focused one-exercise workout logging, bottom sheets, and a keyboard accessory. Desktop browsers show the same compact app.
+Designed around iPhone 17 Pro: a single-column app shell, safe-area-aware bottom tabs, focused one-exercise workout logging, bottom sheets, and native keyboard controls. Desktop browsers show the same compact app.
 
 **Live app:** [benanianas.github.io/project-apex](https://benanianas.github.io/project-apex/) · [Source repository](https://github.com/benanianas/project-apex)
 
@@ -35,7 +35,7 @@ The dev server intentionally does not register a service worker. Use the product
 ## Using APEX
 
 - **Today:** select any day, inspect the prescription, start or resume. Rest has no mandatory log. Recovery uses a mobility checklist.
-- **Workout:** completed sets and edits save immediately to IndexedDB. Drafts survive reloads. Mark each actual set complete; blank values are distinct from zero. Use `W` to flag warm-ups. Set options contain RPE, notes, and removal. Carry rows support time and distance. Timer state persists and uses a deadline timestamp.
+- **Workout:** completed sets and edits save immediately to IndexedDB. Drafts survive reloads. **Cancel workout → Discard workout** removes an accidental draft and its linked entries without counting it as completed; **Keep workout** dismisses the confirmation. Back to Today keeps a draft for later. Mark each actual set complete; blank values are distinct from zero. Use `W` to flag warm-ups. Set options contain RPE, notes, and removal. Carry rows support time and distance. Timer state persists and uses a deadline timestamp.
 - **Progress:** inspect weekly sets, resistance volume, primary-muscle sets, cardio by modality, rope development, consistency, and saved history. Edit sessions or activities from History. Deleting a workout also deletes linked cardio/rope records after confirmation.
 - **Exercises:** opening a movement shows **Log sets → Your progress → Exercise info**. Log directly into its active workout, or complete a separate single-exercise session. Visiting a page alone creates no saved record. Exercise info opens the offline guide, original vector schematic, muscles, alternatives and clearly labeled online video search. No external video/media loads until tapped.
 - **Program:** change prescriptions, substitute/reorder movements, create/duplicate/reorder days and programs, create future blocks, assign optional weekdays, or archive programs. A restored original template is a new copy. History always keeps its original movement and prescription snapshots. Custom logging-convention changes create a new exercise identity.

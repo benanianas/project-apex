@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { ArrowUpRight, Undo2 } from 'lucide-react';
-import { db, saveSession } from '../storage/db';
+import DiscardWorkoutDialog from './DiscardWorkoutDialog';
+import { db, discardDraftSession, saveSession } from '../storage/db';
 import { now, type Exercise, type Performance, type SetRecord } from '../domain/model';
 import { prepareExerciseSession } from '../domain/exerciseSession';
 import { setProblem, workingSets } from '../domain/calculations';
@@ -25,6 +26,8 @@ export default function ExerciseLogPanel({ exercise }: { exercise: Exercise }) {
   const current = useRef(performance);
   const queue = useRef(Promise.resolve());
   const revision = useRef(0);
+  const discarding = useRef(false);
+  const [canceling, setCanceling] = useState(false);
   const [state, setState] = useState(
     sessions.some((s) => s.id === initial.id) ? 'Saved on device' : 'Ready to log',
   );
@@ -33,6 +36,7 @@ export default function ExerciseLogPanel({ exercise }: { exercise: Exercise }) {
   const [undo, setUndo] = useState<Performance | null>(null);
   const individual = initial.dayId.startsWith('individual-');
   function persist(next: Performance) {
+    if (discarding.current) return;
     const version = ++revision.current;
     current.current = next;
     setPerformance(next);
@@ -99,6 +103,18 @@ export default function ExerciseLogPanel({ exercise }: { exercise: Exercise }) {
       report(error);
     } finally {
       setBusy(false);
+    }
+  }
+  async function discard() {
+    discarding.current = true;
+    try {
+      await queue.current.catch(() => {});
+      await discardDraftSession(initial.id);
+      notify('Workout canceled. It was not counted as completed.');
+      go('today');
+    } catch (error) {
+      discarding.current = false;
+      throw error;
     }
   }
   const p = performance;
@@ -169,6 +185,22 @@ export default function ExerciseLogPanel({ exercise }: { exercise: Exercise }) {
           {busy ? 'Saving…' : individual ? 'Finish session' : 'Open workout'}
           <ArrowUpRight size={17} />
         </button>
+        {individual && (
+          <button
+            className="danger text-button cancel-workout"
+            disabled={busy}
+            onClick={() => setCanceling(true)}
+          >
+            Cancel workout
+          </button>
+        )}
+        {canceling && (
+          <DiscardWorkoutDialog
+            title={initial.title}
+            onClose={() => setCanceling(false)}
+            onDiscard={discard}
+          />
+        )}
       </div>
     </Section>
   );
