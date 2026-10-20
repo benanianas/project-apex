@@ -8,6 +8,8 @@ Validated on 2026-10-20 using Node 24.20.0 on macOS.
 - TypeScript, ESLint, Prettier, and Vite production build passed. The production service worker precaches the shell, local illustrations/icons, lazy screens and charts.
 - Rendered phone views inspected: Today, focused workout, exercise logging, separate guide, and grouped Settings. Desktop and 320-pixel width overflow checks also passed.
 
+**Deployment:** [GitHub Pages](https://benanianas.github.io/project-apex/) returned HTTPS 200 and its Pages build/deployment completed successfully. The manifest start URL, ID and scope are `/project-apex/`. Six additional checks against the public URL passed in Chromium and WebKit: offline reload/logging/guides/export, shared exercise logging and separate guide navigation, and full-screen layout.
+
 Tests use isolated browser profiles and fictional fixtures; the shipped application starts with no personal history. Screenshots and Playwright traces are local ignored artifacts, not deployed data.
 
 A physical iPhone was not available. Home Screen installation, actual iOS safe-area values, keyboard and Share Sheet behavior, background suspension, and storage eviction require the checks in [IOS-QA.md](IOS-QA.md). No test can guarantee that iOS will retain local data forever.

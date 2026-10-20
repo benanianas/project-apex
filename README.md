@@ -6,6 +6,8 @@ APEX includes the original seven-day foundation block: three full-body sessions 
 
 Designed around iPhone 17 Pro: a single-column app shell, safe-area-aware bottom tabs, focused one-exercise workout logging, bottom sheets, and a keyboard accessory. Desktop browsers show the same compact app.
 
+**Live app:** [benanianas.github.io/project-apex](https://benanianas.github.io/project-apex/) · [Source repository](https://github.com/benanianas/project-apex)
+
 ## Run locally
 
 Requires Node 22.12+ (Node 24 used for validation) and npm. On the configured SSD development machine:
