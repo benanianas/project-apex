@@ -17,7 +17,8 @@ export const fromKmh = (v: number, u: 'mph' | 'km/h') => (u === 'mph' ? v / KM_P
 export const toKm = (v: number, u: 'mi' | 'km') => (u === 'mi' ? v * KM_PER_MILE : v);
 export const fromKm = (v: number, u: 'mi' | 'km') => (u === 'mi' ? v / KM_PER_MILE : v);
 export const rounded = (v: number, d = 1) => Number(v.toFixed(d));
-export const workingSets = (p: Performance) => p.sets.filter((s) => s.done && !s.warmup);
+export const workingSets = (p: Performance) =>
+  p.sets.filter((s) => s.done && !s.warmup && !setProblem(p.exercise, s));
 export const volumeCompatible = (e: Exercise) => e.type === 'resistance';
 export function setVolume(e: Exercise, s: SetRecord): number | null {
   if (!volumeCompatible(e)) return null;

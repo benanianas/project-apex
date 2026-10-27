@@ -1,3 +1,4 @@
+import { readinessExercises } from '../src/data/boxing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import Dexie from 'dexie';
 import {
@@ -33,8 +34,10 @@ afterEach(async () => {
 describe('persistent sessions and snapshots', () => {
   it('seeds once even with repeated or concurrent startup', async () => {
     await Promise.all([seed(database), seed(database)]);
-    expect(await database.programs.count()).toBe(1);
-    expect(await database.exercises.count()).toBe(originalExercises.length);
+    expect(await database.programs.count()).toBe(2);
+    expect(await database.exercises.count()).toBe(
+      originalExercises.length + readinessExercises.length,
+    );
   });
   it('creates a full draft, persists edited sets, and reloads it', async () => {
     const p = makeOriginalProgram();
@@ -61,7 +64,7 @@ describe('persistent sessions and snapshots', () => {
     expect(historical?.title).toBe('Full Body A');
     expect(historical?.performances[0].prescription.sets).toBe(3);
     expect(await database.sessions.count()).toBe(1);
-    expect(await database.programs.count()).toBe(2);
+    expect(await database.programs.count()).toBe(3);
   });
   it('prefills only previously completed comparable performances, without marking them done', async () => {
     const p = makeOriginalProgram();
@@ -110,7 +113,9 @@ describe('persistent sessions and snapshots', () => {
     await removeSession(s.id, database);
     expect(await database.sessions.count()).toBe(0);
     expect(await database.drafts.count()).toBe(0);
-    expect(await database.exercises.count()).toBe(originalExercises.length);
+    expect(await database.exercises.count()).toBe(
+      originalExercises.length + readinessExercises.length,
+    );
   });
 });
 describe('canceling unfinished workouts', () => {
@@ -173,7 +178,7 @@ describe('canceling unfinished workouts', () => {
     expect((await database.drafts.toArray()).map((d) => d.id)).toEqual(['cardio-new']);
     expect(await database.timers.get('rest')).toMatchObject({ endAt: null, remaining: 180 });
     expect((await database.settings.get('settings'))?.weightUnit).toBe('lb');
-    expect(await database.programs.count()).toBe(1);
+    expect(await database.programs.count()).toBe(2);
   });
   it('refuses to cancel completed history', async () => {
     const p = makeOriginalProgram();
@@ -245,8 +250,10 @@ describe('complete, validated backup restoration', () => {
     const b = await createBackup(database);
     const v1 = { ...b, version: 1, data: { ...b.data, drafts: undefined, timers: undefined } };
     const parsed = parseBackup(JSON.stringify(v1));
-    expect(parsed.version).toBe(2);
-    expect(parsed.data.exercises).toHaveLength(originalExercises.length);
+    expect(parsed.version).toBe(3);
+    expect(parsed.data.exercises).toHaveLength(
+      originalExercises.length + readinessExercises.length,
+    );
     expect(parsed.data.drafts).toEqual([]);
   });
   it('rejects malformed, oversized, duplicate, future and dangling records', async () => {
@@ -265,8 +272,10 @@ describe('complete, validated backup restoration', () => {
     const b = await createBackup(database);
     b.data.programs[0].days[0].exercises[0].sets = -1;
     await expect(importBackup(b, 'replace', database)).rejects.toThrow();
-    expect(await database.programs.count()).toBe(1);
-    expect(await database.exercises.count()).toBe(originalExercises.length);
+    expect(await database.programs.count()).toBe(2);
+    expect(await database.exercises.count()).toBe(
+      originalExercises.length + readinessExercises.length,
+    );
   });
   it('rolls back an import if a database write fails mid-transaction', async () => {
     const b = await createBackup(database);
@@ -282,7 +291,9 @@ describe('complete, validated backup restoration', () => {
     b.data.settings.weightUnit = 'lb';
     await expect(importBackup(b, 'replace', database)).rejects.toThrow(/simulated/);
     expect((await database.settings.get('settings'))?.weightUnit).toBe('kg');
-    expect(await database.exercises.count()).toBe(originalExercises.length);
+    expect(await database.exercises.count()).toBe(
+      originalExercises.length + readinessExercises.length,
+    );
     database.sessions.hook('creating').unsubscribe(fail);
     await source.delete();
   });

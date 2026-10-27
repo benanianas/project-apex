@@ -5,12 +5,15 @@ import { dateKey } from '../domain/model';
 import { createSession, db } from '../storage/db';
 import { ropeStages } from '../data/program';
 import { findGuide } from '../data/exercises';
+import { effectiveDay, priorityOf, priorityOrder, taskLabel } from '../domain/training';
+import WorkoutProgress from '../components/WorkoutProgress';
 import ExerciseDiagram from '../components/ExerciseDiagram';
 import { go, PageTitle, Section, useData } from '../components/ui';
 export default function Today() {
   const { program, settings, exercises, sessions, cardio, report } = useData();
-  const day = program.days.find((d) => d.id === settings.selectedDayId) ?? program.days[0];
-  const index = program.days.indexOf(day);
+  const sourceDay = program.days.find((d) => d.id === settings.selectedDayId) ?? program.days[0];
+  const day = effectiveDay(program, sourceDay);
+  const index = program.days.indexOf(sourceDay);
   const [starting, setStarting] = useState(false);
   const assigned = program.days.filter((d) => d.weekday === new Date().getDay());
   const draft = sessions.find(
@@ -24,6 +27,12 @@ export default function Today() {
       s.date === dateKey(),
   );
   const weekly = consistency(sessions, cardio, program, dateKey(), settings.weekStart);
+  const mandatory =
+    day.exercises.filter((p) => priorityOf(p) === 'mandatory').length +
+    (day.tasks?.filter((t) => t.priority === 'mandatory').length ?? 0);
+  const optional =
+    day.exercises.filter((p) => priorityOf(p) === 'optional').length +
+    (day.tasks?.filter((t) => t.priority === 'optional').length ?? 0);
   const planned = day.exercises.reduce((n, p) => n + p.sets, 0);
   const stage = ropeStages[settings.ropeStage];
   const Icon =
@@ -38,7 +47,7 @@ export default function Today() {
     if (starting) return;
     setStarting(true);
     try {
-      const session = draft ?? (await createSession(program, day));
+      const session = draft ?? (await createSession(program, sourceDay));
       go(`workout/${session.id}`);
     } catch (e) {
       report(e);
@@ -55,7 +64,6 @@ export default function Today() {
           day: 'numeric',
         })}
         title="Today"
-        subtitle="Your next step forward."
       />
       {assigned.length > 0 && (
         <div className="assigned-days">
@@ -77,9 +85,7 @@ export default function Today() {
         <div>
           <div className="program-strip">
             <span className="status-dot" />
-            <span>
-              {program.name} <span className="muted">/ {program.block}</span>
-            </span>
+            <span>{program.name}</span>
             <span className="pill">
               Week {weekNumber(program)} of {program.weeks}
             </span>
@@ -123,11 +129,21 @@ export default function Today() {
                 </>
               )}
             </div>
+            <p className="day-priority-counts">
+              {mandatory} mandatory · {optional} optional
+            </p>
             {day.kind === 'rest' ? (
-              <p className="rest-copy">
-                Nothing to tick off today. Enjoy normal light movement and optional gentle
-                stretching. Rest supports your next session.
-              </p>
+              <div>
+                <p className="rest-copy">
+                  Nothing to tick off today. Enjoy normal light movement and optional gentle
+                  stretching. Rest supports your next session.
+                </p>
+                {day.tasks?.some((t) => t.priority === 'optional') && (
+                  <button className="text-button" disabled={starting} onClick={() => void start()}>
+                    {draft ? 'Resume optional mobility' : 'Log optional mobility'}
+                  </button>
+                )}
+              </div>
             ) : (
               <button
                 className="primary hero-action"
@@ -149,6 +165,20 @@ export default function Today() {
               </p>
             )}
           </section>
+          {(draft || completed.at(-1)) && (
+            <WorkoutProgress session={(draft ?? completed.at(-1))!} />
+          )}
+          {program.readiness && (
+            <p className="small muted readiness-note">
+              {day.intervalPlan
+                ? day.intervalActive
+                  ? 'Controlled intervals enabled. Reduce to easy aerobic work in Program if recovery is limited.'
+                  : 'Easy aerobic work is active. From week 3, enable controlled intervals in Program only if recovery permits.'
+                : day.powerOption
+                  ? 'No jumps required. Optional 3 × 3 squat jumps can be enabled in Program after two weeks with good recovery and joint tolerance.'
+                  : 'General athletic preparation for coached boxing. No boxing technique drills.'}
+            </p>
+          )}
           {day.kind === 'strength' && (
             <Section
               title="The session"
@@ -167,6 +197,9 @@ export default function Today() {
                         <span className="row-number">{String(i + 1).padStart(2, '0')}</span>
                         <ExerciseDiagram exercise={e} small />
                         <div>
+                          <span className={`priority-badge ${priorityOf(p)}`}>
+                            {priorityOf(p) === 'mandatory' ? 'Mandatory' : 'Optional'}
+                          </span>
                           <h3>{e.name}</h3>
                           <p>
                             {e.primary}
@@ -190,7 +223,27 @@ export default function Today() {
               </div>
             </Section>
           )}
-          {day.cardio && (
+          {day.tasks && (
+            <Section title="Today's priorities">
+              <div className="card task-preview">
+                {priorityOrder(day.tasks).map((task) => (
+                  <div key={task.id}>
+                    <span className={`priority-badge ${task.priority}`}>
+                      {task.priority === 'mandatory' ? 'Mandatory' : 'Optional'}
+                    </span>
+                    <p>{taskLabel(task)}</p>
+                  </div>
+                ))}
+              </div>
+              {day.cardio && (
+                <p className="small muted">
+                  Log your actual duration, speed, incline, distance and effort. Treadmill speed
+                  follows conversational effort; 6 mph is not required.
+                </p>
+              )}
+            </Section>
+          )}
+          {day.cardio && !day.tasks && (
             <Section title="Your conditioning">
               <div className="two-grid">
                 <div className="card">

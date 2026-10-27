@@ -17,6 +17,7 @@ const modalities = [
   'Outdoor running',
   'Incline walking',
   'Cycling',
+  'Rowing',
   'Elliptical',
   'Other cardio',
 ];
@@ -91,7 +92,7 @@ function Input({
         value={value}
         required={required}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Optional"
+        placeholder={required ? '—' : 'Optional'}
       />
     </Field>
   );
@@ -106,8 +107,8 @@ export function CardioForm({
   onSaved: () => void;
 }) {
   const { settings, program, sessions, notify, report } = useData();
-  const session = sessions.find((s) => s.id === sessionId);
-  const day = program.days.find((d) => d.id === session?.dayId);
+  const session = sessions.find((s) => s.id === (existing?.sessionId ?? sessionId));
+  const day = session?.daySnapshot ?? program.days.find((d) => d.id === session?.dayId);
   const draftId = existing ? `cardio-edit-${existing.id}` : `cardio-${sessionId ?? 'new'}`;
   const [saving, setSaving] = useState(false);
   const [recordId] = useState(() => existing?.id ?? uid());
@@ -120,6 +121,18 @@ export function CardioForm({
     date: existing?.date ?? dateKey(),
     activity: existing?.activity ?? day?.cardio?.activity ?? 'Treadmill running',
     minutes: existing ? String(existing.minutes) : '',
+    protocol: existing
+      ? existing.intervals
+        ? 'intervals'
+        : 'steady'
+      : day?.intervalActive
+        ? 'intervals'
+        : 'steady',
+    intervalRounds: String(existing?.intervals?.rounds ?? day?.intervalPlan?.rounds ?? 6),
+    intervalWork: String(existing?.intervals?.workSeconds ?? day?.intervalPlan?.workSeconds ?? 60),
+    intervalRest: String(
+      existing?.intervals?.recoverySeconds ?? day?.intervalPlan?.recoverySeconds ?? 120,
+    ),
     speed:
       existing?.speedKmh != null
         ? String(rounded(fromKmh(existing.speedKmh, settings.speedUnit), 3))
@@ -154,6 +167,14 @@ export function CardioForm({
         date: f.date,
         activity: f.activity,
         minutes: Number(f.minutes),
+        intervals:
+          f.protocol === 'intervals'
+            ? {
+                rounds: Number(f.intervalRounds),
+                workSeconds: Number(f.intervalWork),
+                recoverySeconds: Number(f.intervalRest),
+              }
+            : undefined,
         speedKmh: speed,
         distanceKm: distance,
         incline: nullable(f.incline),
@@ -178,9 +199,48 @@ export function CardioForm({
   return (
     <form className="form-stack" onSubmit={(e) => void submit(e)}>
       <p className="muted small">
-        Target: {day?.cardio?.min ?? 30}–{day?.cardio?.max ?? 35} minutes at conversational RPE 3–4.
+        {day?.intervalActive
+          ? `Target: ${day.intervalPlan!.rounds} × ${day.intervalPlan!.workSeconds}s at RPE 7 with ${day.intervalPlan!.recoverySeconds}s easy between efforts. No maximum-effort sprinting.`
+          : `Target: ${day?.cardio?.min ?? 30}–${day?.cardio?.max ?? 40} minutes at conversational RPE ${day?.cardio?.rpe ?? '3–4'}. Choose speed by effort; 6 mph is not required.`}{' '}
         Enter what you actually completed. Draft entries autosave.
       </p>
+      <Field label="Conditioning format">
+        <select value={f.protocol} onChange={(e) => c('protocol', e.target.value)}>
+          <option value="steady">Steady aerobic</option>
+          <option value="intervals">Controlled intervals</option>
+        </select>
+      </Field>
+      {f.protocol === 'intervals' && (
+        <div className="form-grid">
+          <Input
+            label="Completed interval rounds"
+            value={f.intervalRounds}
+            onChange={(v) => c('intervalRounds', v)}
+            min={1}
+            max={100}
+            step="1"
+            required
+          />
+          <Input
+            label="Work seconds per interval"
+            value={f.intervalWork}
+            onChange={(v) => c('intervalWork', v)}
+            min={1}
+            max={3600}
+            step="1"
+            required
+          />
+          <Input
+            label="Easy recovery seconds between efforts"
+            value={f.intervalRest}
+            onChange={(v) => c('intervalRest', v)}
+            min={0}
+            max={3600}
+            step="1"
+            required
+          />
+        </div>
+      )}
       <div className="form-grid">
         <Field label="Date">
           <input type="date" value={f.date} required onChange={(e) => c('date', e.target.value)} />
@@ -278,7 +338,10 @@ export function RopeForm({
   existing?: Rope;
   onSaved: () => void;
 }) {
-  const { settings, rope, notify, report } = useData();
+  const { settings, rope, sessions, notify, report } = useData();
+  const target = sessions
+    .find((s) => s.id === (existing?.sessionId ?? sessionId))
+    ?.daySnapshot?.tasks?.find((t) => t.kind === 'rope')?.target;
   const stage = ropeStages[settings.ropeStage];
   const [saving, setSaving] = useState(false);
   const [recordId] = useState(() => existing?.id ?? uid());
@@ -290,8 +353,8 @@ export function RopeForm({
   } = useFormDraft(existing ? `rope-edit-${existing.id}` : `rope-${sessionId ?? 'new'}`, {
     date: existing?.date ?? dateKey(),
     rounds: existing ? String(existing.rounds) : '',
-    work: existing ? String(existing.workSeconds) : String(stage.work),
-    rest: existing ? String(existing.restSeconds) : '60',
+    work: existing ? String(existing.workSeconds) : String(target?.workSeconds ?? stage.work),
+    rest: existing ? String(existing.restSeconds) : String(target?.recoverySeconds ?? 60),
     elapsed: existing?.elapsedSeconds?.toString() ?? '',
     rpe: existing?.rpe?.toString() ?? '',
     tolerance: existing?.tolerance ?? 'unknown',
@@ -334,7 +397,8 @@ export function RopeForm({
   return (
     <form className="form-stack" onSubmit={(e) => void submit(e)}>
       <div className="info-line">
-        Reference · {stage.label}: {stage.rounds} × {stage.work}s, about 60s rest. Enter completed
+        Reference · {target ? 'Session target' : stage.label}: {target?.rounds ?? stage.rounds} ×{' '}
+        {target?.workSeconds ?? stage.work}s, {target?.recoverySeconds ?? 60}s rest. Enter completed
         rounds below.
       </div>
       <p className="muted small">

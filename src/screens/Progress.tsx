@@ -20,6 +20,7 @@ import {
   weeklyStats,
 } from '../domain/calculations';
 import { dateKey, type Cardio, type Rope, type Session } from '../domain/model';
+import { sessionProgress } from '../domain/training';
 import { db, removeSession } from '../storage/db';
 import { CardioForm, RopeForm } from '../components/ActivityForms';
 import { Empty, Field, go, Modal, PageTitle, Section, Stat, useData } from '../components/ui';
@@ -38,6 +39,7 @@ export default function Progress() {
   } | null>(null);
   const [activity, setActivity] = useState('Treadmill running');
   const [similar, setSimilar] = useState(false);
+  const [cardioFormat, setCardioFormat] = useState('steady');
   const [cardioMetric, setCardioMetric] = useState('minutes');
   const [ropeMetric, setRopeMetric] = useState('active');
   const [strengthMetric, setStrengthMetric] = useState('sets');
@@ -60,7 +62,10 @@ export default function Progress() {
     ]),
   ];
   let comparable = cc
-    .filter((c) => c.activity === activity)
+    .filter(
+      (c) =>
+        c.activity === activity && (cardioFormat === 'intervals' ? !!c.intervals : !c.intervals),
+    )
     .sort((a, b) => a.date.localeCompare(b.date) || a.updatedAt.localeCompare(b.updatedAt));
   const latest = comparable.at(-1);
   if (similar && latest)
@@ -136,6 +141,9 @@ export default function Progress() {
         <strong>{s.title}</strong>
         <small>
           {s.date} · {s.kind} · {s.status}
+          {s.status === 'completed' &&
+            s.daySnapshot &&
+            ` · ${sessionProgress(s, cardio, rope).essential === 'complete' ? 'Essential work complete' : sessionProgress(s, cardio, rope).essential === 'none' ? 'No mandatory work' : 'Essential work partially completed'}`}
           {s.kind === 'strength'
             ? ` · ${rounded(fromKg(sessionVolume(s), settings.weightUnit))} ${settings.weightUnit}·reps`
             : ''}
@@ -440,6 +448,14 @@ export default function Progress() {
                 ))}
               </select>
               <select
+                aria-label="Cardio format"
+                value={cardioFormat}
+                onChange={(e) => setCardioFormat(e.target.value)}
+              >
+                <option value="steady">Steady aerobic</option>
+                <option value="intervals">Controlled intervals</option>
+              </select>
+              <select
                 aria-label="Cardio metric"
                 value={cardioMetric}
                 onChange={(e) => setCardioMetric(e.target.value)}
@@ -462,8 +478,10 @@ export default function Progress() {
             {chart(cardioPoints, cardioMetric, cardioUnit)}
             <p className="muted small">
               {similar ? 'Missing RPE is excluded from effort comparisons. ' : ''}Only{' '}
-              {activity.toLowerCase()} is shown. Longer at similar effort, or faster at comparable
-              duration and effort, can be useful progress. More intensity is not always better.
+              {activity.toLowerCase()} (
+              {cardioFormat === 'intervals' ? 'interval sessions' : 'steady aerobic sessions'}) is
+              shown. Longer at similar effort, or faster at comparable duration and effort, can be
+              useful progress. More intensity is not always better.
             </p>
             <div className="stat-grid">
               <Stat
@@ -655,6 +673,9 @@ export default function Progress() {
                       <small>
                         {c.date} · {c.minutes} min · {c.completed ? 'Completed' : 'Incomplete'}
                         {c.rpe !== null ? ` · RPE ${c.rpe}` : ''}
+                        {c.intervals
+                          ? ` · ${c.intervals.rounds} × ${c.intervals.workSeconds}s / ${c.intervals.recoverySeconds}s easy`
+                          : ''}
                       </small>
                     </button>
                     <button

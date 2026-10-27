@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { db, type ApexDB } from './db';
+import { db, seed, type ApexDB } from './db';
 import {
   cardioSchema,
   dateKey,
@@ -11,6 +11,7 @@ import {
   settingsSchema,
   timerSchema,
 } from '../domain/model';
+import { sessionProgress } from '../domain/training';
 import { setProblem } from '../domain/calculations';
 export const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
 const draftSchema = z.object({
@@ -20,7 +21,7 @@ const draftSchema = z.object({
 });
 export const backupSchema = z.object({
   format: z.literal('project-apex'),
-  version: z.literal(2),
+  version: z.literal(3),
   exportedAt: z.string().datetime(),
   data: z.object({
     exercises: z.array(exerciseSchema).max(10000),
@@ -54,6 +55,8 @@ export function parseBackup(raw: string): Backup {
       };
     }
   }
+  if (input && typeof input === 'object' && 'version' in input && input.version === 2)
+    input = { ...input, version: 3 };
   const result = backupSchema.safeParse(input);
   if (!result.success)
     throw new Error(
@@ -95,7 +98,7 @@ export function parseBackup(raw: string): Backup {
 export async function createBackup(database: ApexDB = db): Promise<Backup> {
   return database.transaction('r', database.tables, async () => ({
     format: 'project-apex',
-    version: 2,
+    version: 3,
     exportedAt: now(),
     data: {
       exercises: await database.exercises.toArray(),
@@ -135,7 +138,10 @@ export async function importBackup(backup: Backup, mode: 'replace' | 'merge', da
         added++;
       }
     }
-    if (mode === 'replace') await database.settings.put(b.data.settings);
+    if (mode === 'replace') {
+      await database.settings.put(b.data.settings);
+      await seed(database);
+    }
   });
   return { added, skipped };
 }
@@ -194,6 +200,9 @@ export async function exportCsv(kind: 'sets' | 'sessions' | 'cardio' | 'rope', d
         'warmup',
         'completed',
         'notes',
+        'priority',
+        'skipped_reason',
+        'equipment_label',
       ],
       ...b.data.sessions.flatMap((s) =>
         s.performances.flatMap((p) =>
@@ -214,6 +223,9 @@ export async function exportCsv(kind: 'sets' | 'sessions' | 'cardio' | 'rope', d
             String(set.warmup),
             String(set.done),
             set.notes,
+            p.prescription.priority ?? 'mandatory',
+            p.skipped?.reason ?? '',
+            p.equipmentLabel ?? '',
           ]),
         ),
       ),
@@ -230,6 +242,8 @@ export async function exportCsv(kind: 'sets' | 'sessions' | 'cardio' | 'rope', d
         'started_at_utc',
         'finished_at_utc',
         'notes',
+        'essential_work',
+        'recovery',
       ],
       ...b.data.sessions.map((s) => [
         s.id,
@@ -240,6 +254,8 @@ export async function exportCsv(kind: 'sets' | 'sessions' | 'cardio' | 'rope', d
         s.startedAt,
         s.finishedAt,
         s.notes,
+        sessionProgress(s, b.data.cardio, b.data.rope).essential,
+        s.recovery ?? 'unknown',
       ]),
     ];
   if (kind === 'cardio')
@@ -256,6 +272,9 @@ export async function exportCsv(kind: 'sets' | 'sessions' | 'cardio' | 'rope', d
         'average_heart_rate',
         'completed',
         'notes',
+        'interval_rounds',
+        'interval_work_seconds',
+        'interval_recovery_seconds',
       ],
       ...b.data.cardio.map((c) => [
         c.id,
@@ -269,6 +288,9 @@ export async function exportCsv(kind: 'sets' | 'sessions' | 'cardio' | 'rope', d
         c.heartRate,
         String(c.completed),
         c.notes,
+        c.intervals?.rounds ?? null,
+        c.intervals?.workSeconds ?? null,
+        c.intervals?.recoverySeconds ?? null,
       ]),
     ];
   if (kind === 'rope')

@@ -97,7 +97,7 @@ export default function App() {
     );
   const program = data.programs.find((p) => p.id === data.settings.programId) ?? data.programs[0];
   if (!program) return <p>No program found. Restore a valid backup.</p>;
-  const active = data.sessions.filter((s) => s.status === 'draft');
+  const active = data.sessions.filter((s) => s.status === 'draft' && s.programId === program.id);
   const [page, id, exerciseId] = route.split('/');
   const selected = ['exercise', 'exercise-info'].includes(page)
     ? 'exercises'

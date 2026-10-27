@@ -1,6 +1,6 @@
 # Data model and calculation contracts
 
-Database: `project-apex`, Dexie schema v2. Backup format: `project-apex`, version 2, ISO export timestamp. IDs are stable slugs for original definitions and UUIDs for personal entities. Dates use local `YYYY-MM-DD`; event timestamps use UTC ISO 8601. Week arithmetic uses local noon and calendar dates, avoiding UTC-date and daylight-saving boundary shifts.
+Database: `project-apex`, Dexie schema v3. Backup format: `project-apex`, version 3, ISO export timestamp. IDs are stable slugs for original definitions and UUIDs for personal entities. Dates use local `YYYY-MM-DD`; event timestamps use UTC ISO 8601. Week arithmetic uses local noon and calendar dates, avoiding UTC-date and daylight-saving boundary shifts.
 
 | Table     | Contents                                                                                                                                           |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -14,6 +14,12 @@ Database: `project-apex`, Dexie schema v2. Backup format: `project-apex`, versio
 | drafts    | Autosaved unfinished cardio/rope form values, including the units in which they were entered                                                       |
 
 v1→v2 adds the draft table and defaults exercise archive state without dropping any record. The backup v1→v2 migration adds empty draft/timer arrays where absent. Import uses runtime Zod validation, semantic set validation, unique IDs and required reference checks before its transaction. Import failures never trigger database deletion. Merge keeps current matching IDs and settings; replace clears and restores tables within one transaction.
+
+v2→v3 adds optional metadata without rewriting old sessions. A transactional, one-time seed adds the Boxing Readiness program and five missing exercise definitions, selects Day 1, and resets the rope reference to its initial stage while preserving display units and every historical record. `settings.appliedUpdates` prevents later program choices being overridden. A legacy restore runs this same install once. No backup was supplied or imported for this update.
+
+Program prescriptions carry `priority`; old prescriptions default to mandatory. Programs may include `readiness`, `revision` and `freshHistory`. Sessions snapshot the effective day (including phase/interval/rope targets), individual priorities and prescriptions, task completion/skip reasons, equipment labels and optional recovery. `historyProgramId` isolates comparisons for the fresh block without deleting older history. Later template edits cannot mutate these snapshots. Day tasks have stable IDs, kinds, labels, estimated minutes and optional interval-style rope targets.
+
+Essential completion requires the prescribed number of valid completed working sets for each mandatory movement and completion of each mandatory activity. A skipped mandatory item is partial even if some sets exist; actual work remains in history. Optional omissions do not prevent essential completion. Activity completion uses saved completed cardio/rope records; interval/rope targets require the target rounds at sufficient work duration. Remaining time is an estimate, not a timer. Rest days have no essential target.
 
 ## Resistance semantics
 
@@ -40,11 +46,15 @@ Eligible estimated strength uses Epley (`total load × (1 + reps / 30)`), only c
 
 ## Progression and records
 
+The in-workout previous-performance table uses the latest completed session containing valid working sets for that stable exercise ID, across training days. It preserves the actual set count, null RIR and load convention. Equipment type, load mode, sides and normalized user equipment label must match; unlabeled machines display a comparability reminder. Suggestions evaluate the current prescription against previous actual sets. Added/substituted movements immediately use their own history; no other movement's data is reused. The new program scopes its reference/prefill history to its own ID, while older records remain available in History.
+
 Double progression requires exactly the prescribed number of completed working sets at a consistent load and the top of the rep range. RIR or RPE must establish appropriate effort for every set: heavy compounds ≥2 RIR / ≤8 RPE; compounds ≥1 / ≤9; isolation ≥0 / ≤10. Conflicting effort fields fail the conservative check. Missing RIR/RPE remains unknown. If eligible, the next suggestion rounds upward to an achievable increment; accepting and entering it is always the user's decision. Incomplete, extra, mixed-load, submax, carry and other incompatible sets do not receive a confident load-increase suggestion.
 
 Repeated under-range performance is considered only with a matching exercise identity, prescription and load in the preceding session. Histories and charts are sorted by recorded date and timestamp. Program substitutions have distinct identities. Changing a custom exercise's type, load mode or side convention creates a new identity; previous snapshots remain intact. Assistance trends show the lowest completed working-set assistance per session, with lower being less support.
 
 ## Conditioning and consistency
+
+Cardio interval records store actual `rounds`, `workSeconds` and `recoverySeconds`; total duration cannot be less than active work. Steady and interval trends have separate format filters. The week-three Day 6 target is 6 × 60 seconds with 120 seconds between efforts (16 minutes before the separately checked 8-minute warm-up and 5-minute cooldown). Activation requires both elapsed program time and a manual readiness choice. Snapshots preserve the target used at session creation, even if the program changes later.
 
 Cardio distance = average km/h × minutes / 60, only when speed is known and positive; manually supplied distance takes precedence. Pace = minutes / positive distance. Speed and pace trends are filtered by exact modality. Optional comparable-effort filtering requires known RPE within 1 and duration within 5 minutes of the latest session. Missing measurements are not imputed. Minutes aggregate across aerobic modalities; intensity is not treated as universally better.
 

@@ -2,7 +2,7 @@
 
 An installable, offline-first personal strength and conditioning tracker. React + TypeScript + Vite, Tailwind/CSS, Dexie IndexedDB, Recharts, Lucide, Zod, and Workbox through vite-plugin-pwa. No login, backend, cloud synchronization, analytics SDK, API key, or paid service is needed.
 
-APEX includes the original seven-day foundation block: three full-body sessions (23/24/24 working sets), two conditioning sessions, active recovery, and complete rest. Days are numbered and freely selectable. Reporting weeks begin Wednesday by default.
+APEX now starts with **Project APEX: Boxing Readiness**, a fresh 14-week block of general athletic preparation for coached boxing around February 2027. Three strength days (19/22/22 sets including optional work), two conditioning days, mobility/recovery, and complete rest use numbered Day 1–7 labels. No boxing technique drills are included. The original foundation program remains available in Program. Reporting weeks begin Wednesday by default.
 
 Designed around iPhone 17 Pro: a single-column app shell, safe-area-aware bottom tabs, focused one-exercise workout logging, bottom sheets, and native keyboard controls. Desktop browsers show the same compact app.
 
@@ -41,6 +41,12 @@ The dev server intentionally does not register a service worker. Use the product
 - **Program:** change prescriptions, substitute/reorder movements, create/duplicate/reorder days and programs, create future blocks, assign optional weekdays, or archive programs. A restored original template is a new copy. History always keeps its original movement and prescription snapshots. Custom logging-convention changes create a new exercise identity.
 - **Settings:** units, Wednesday default week boundary, rest-timer behavior, rope reference stage, available load increments, compact display, backups and storage information. Program start dates are edited in Program.
 
+Boxing Readiness marks every exercise/activity **Mandatory** or **Optional**, displays completion counts and an approximate remaining duration, and permits finishing with optional work untouched. Skip any item with a reason; skipped mandatory work remains partially complete. Priority/prescription edits affect future sessions; existing sessions retain snapshots. Day 7 has no required work and supports optional mobility logging without a compliance penalty.
+
+Every resistance logger shows the most recent completed working sets above current entry: date, actual set count, load convention, repetitions and RIR (unknown values stay blank/dash). References use stable exercise IDs across days, exclude the current session, drafts, warm-ups and incomplete/blank sets, and match equipment labels and load semantics. The fresh block starts its own comparison history. Label different machines consistently under the exercise's equipment details. Older records remain accessible in Progress; no old-record correction/import workflow is required.
+
+Weeks 1–2 keep Day 6 aerobic and do not require jumps. From week 3, Program exposes explicit opt-ins for controlled intervals and optional squat jumps. Nothing advances automatically. Cardio logs retain actual interval rounds/work/recovery separately from steady activity; rope targets and priorities can be edited in Program. Limited recovery recorded in at least two of the last three completed sessions prompts a conservative reminder.
+
 The logger's advice is optional. It never changes loads or advances rope stages automatically. Missing effort is unknown, not failure. Reassessment appears when a block has elapsed; Progress includes block measures throughout.
 
 ## Your data and backups
@@ -56,7 +62,7 @@ In Settings → Backup & Restore:
 3. **Merge** imports new IDs and keeps existing records/settings. Conflicting matching IDs are skipped rather than silently overwritten. The success message reports added and skipped counts.
 4. **Restore / Replace** uses the backup as the complete local state, only after typing `REPLACE`. Back up the current state first. Validation occurs before a single IndexedDB transaction; a failed write rolls back the entire import.
 
-Backups above 20 MB, unsupported versions, duplicate IDs, dangling required references, malformed records and invalid values are rejected. The format supports a defined v1→v2 migration; it does not promise support for arbitrary foreign fitness files. CSV exports for sets, workouts, cardio and rope are for analysis, not full restoration, and use normalized units with escaped spreadsheet-safe cells.
+Backups above 20 MB, unsupported versions, duplicate IDs, dangling required references, malformed records and invalid values are rejected. Format v3 accepts existing v1/v2 exports and includes priorities, skip reasons, equipment labels, recovery, day snapshots and interval targets/logs. It does not promise support for arbitrary foreign fitness files. CSV exports for sets, workouts, cardio and rope are for analysis, not full restoration, and use normalized units with escaped spreadsheet-safe cells.
 
 ## Deployment
 

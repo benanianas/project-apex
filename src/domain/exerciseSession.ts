@@ -1,5 +1,5 @@
 import { dateKey, newSet, now, uid, type Exercise, type Program, type Session } from './model';
-import { exerciseHistory, workingSets } from './calculations';
+import { prefillSets } from './history';
 
 /** Prepare an individual session without writing anything just by opening a page. */
 export function prepareExerciseSession(
@@ -31,17 +31,11 @@ export function prepareExerciseSession(
         rest: 120,
         alternatives: [...exercise.alternatives],
       };
-  const history = exerciseHistory(exercise.id, sessions).filter(
-    ({ performance: p }) =>
-      p.exercise.type === exercise.type &&
-      p.exercise.sides === exercise.sides &&
-      p.exercise.loadMode === exercise.loadMode,
-  );
-  const previous = history.at(-1)?.performance;
-  const old = previous ? workingSets(previous) : [];
+  const old = prefillSets(exercise, sessions, program.freshHistory ? program.id : undefined);
   return {
     id: uid(),
     programId: program.id,
+    historyProgramId: program.freshHistory ? program.id : undefined,
     dayId: `individual-${exercise.id}`,
     title: exercise.name,
     kind: 'strength',

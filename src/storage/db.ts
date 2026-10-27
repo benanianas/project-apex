@@ -1,8 +1,12 @@
+import { BOXING_UPDATE, makeBoxingProgram, readinessExercises } from '../data/boxing';
+import { effectiveDay } from '../domain/training';
+import { prefillSets } from '../domain/history';
 import Dexie, { type Table } from 'dexie';
 import { originalExercises } from '../data/exercises';
 import { defaultSettings, makeOriginalProgram } from '../data/program';
 import {
   now,
+  dateKey,
   uid,
   newSet,
   sessionSchema,
@@ -52,6 +56,8 @@ export class ApexDB extends Dexie {
             e.archived ??= false;
           });
       });
+    // New optional fields need no history rewrite; close older database connections safely.
+    this.version(3).stores({});
   }
 }
 export const db = new ApexDB();
@@ -60,10 +66,26 @@ export async function seed(database = db) {
     'rw',
     [database.exercises, database.programs, database.settings],
     async () => {
-      if (await database.settings.get('settings')) return;
-      await database.exercises.bulkPut(structuredClone(originalExercises));
-      await database.programs.put(makeOriginalProgram());
-      await database.settings.put(defaultSettings());
+      if (!(await database.settings.get('settings'))) {
+        await database.exercises.bulkPut(structuredClone(originalExercises));
+        await database.programs.put(makeOriginalProgram());
+        await database.settings.put(defaultSettings());
+      }
+      const settings = (await database.settings.get('settings'))!;
+      if (settings.appliedUpdates?.includes(BOXING_UPDATE)) return;
+      for (const exercise of [...originalExercises, ...readinessExercises]) {
+        if (!(await database.exercises.get(exercise.id)))
+          await database.exercises.add(structuredClone(exercise));
+      }
+      const program = makeBoxingProgram();
+      if (!(await database.programs.get(program.id))) await database.programs.add(program);
+      const installed = (await database.programs.get(program.id))!;
+      await database.settings.update('settings', {
+        programId: installed.id,
+        selectedDayId: installed.days[0].id,
+        ropeStage: 0,
+        appliedUpdates: [...(settings.appliedUpdates ?? []), BOXING_UPDATE],
+      });
     },
   );
 }
@@ -71,21 +93,12 @@ export async function createSession(program: Program, day: TrainingDay, database
   const previous = (await database.sessions.where('status').equals('completed').toArray()).sort(
     (a, b) => b.date.localeCompare(a.date) || b.startedAt.localeCompare(a.startedAt),
   );
+  const plan = effectiveDay(program, day);
   const performances: Performance[] = [];
-  for (const p of day.exercises) {
+  for (const p of plan.exercises) {
     const exercise = await database.exercises.get(p.exerciseId);
     if (!exercise) throw new Error('Exercise is missing. Repair the program before starting.');
-    const last = previous
-      .flatMap((s) => s.performances)
-      .find(
-        (ep) =>
-          ep.exercise.id === exercise.id &&
-          ep.sets.some((s) => s.done && !s.warmup) &&
-          ep.exercise.type === exercise.type &&
-          ep.exercise.sides === exercise.sides &&
-          ep.exercise.loadMode === exercise.loadMode,
-      );
-    const old = last?.sets.filter((s) => s.done && !s.warmup) ?? [];
+    const old = prefillSets(exercise, previous, program.freshHistory ? program.id : undefined);
     performances.push({
       id: uid(),
       exercise: structuredClone(exercise),
@@ -109,13 +122,17 @@ export async function createSession(program: Program, day: TrainingDay, database
     dayId: day.id,
     title: day.title,
     kind: day.kind,
-    date: now().slice(0, 10),
+    date: dateKey(),
     startedAt: now(),
     finishedAt: null,
     status: 'draft',
     performances,
-    warmup: [...day.warmup],
-    mobility: [...day.mobility],
+    warmup: [...plan.warmup],
+    mobility: [...plan.mobility],
+    daySnapshot: plan,
+    historyProgramId: program.freshHistory ? program.id : undefined,
+    taskStates: {},
+    recovery: 'unknown',
     checklist: {},
     notes: '',
     updatedAt: now(),
@@ -196,5 +213,6 @@ export async function clearPersonalData(database = db) {
     await database.exercises.bulkAdd(structuredClone(originalExercises));
     await database.programs.add(makeOriginalProgram());
     await database.settings.add(defaultSettings());
+    await seed(database);
   });
 }

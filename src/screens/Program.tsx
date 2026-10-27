@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { ArrowDown, ArrowUp, Copy, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { db, restoreOriginal } from '../storage/db';
+import { boxingRules } from '../data/boxing';
+import { blockWeek, priorityOf, priorityOrder } from '../domain/training';
 import { trainingRules } from '../data/program';
 import {
   dateKey,
@@ -84,6 +86,54 @@ export default function Program() {
           </p>
         </div>
       </div>
+      {program.readiness && (
+        <Section title="Return-to-training phase">
+          <div className="card form-stack">
+            <p>
+              Weeks 1–2 use easy aerobic work and no required jumps. From week 3, enable either
+              option only if recovery and joint tolerance are good. You can turn either off at any
+              time.
+            </p>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                disabled={blockWeek(program) < 3}
+                checked={program.readiness.intervals}
+                onChange={(e) =>
+                  void db.programs
+                    .update(program.id, {
+                      readiness: { ...program.readiness!, intervals: e.target.checked },
+                      updatedAt: now(),
+                    })
+                    .catch(report)
+                }
+              />
+              Enable controlled Day 6 bike / rower intervals
+            </label>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                disabled={blockWeek(program) < 3}
+                checked={program.readiness.jumps}
+                onChange={(e) =>
+                  void db.programs
+                    .update(program.id, {
+                      readiness: { ...program.readiness!, jumps: e.target.checked },
+                      updatedAt: now(),
+                    })
+                    .catch(report)
+                }
+              />
+              Include optional Day 1 squat jumps (3 × 3) in warm-up
+            </label>
+            <p className="small muted">
+              Current program week: {blockWeek(program)}. Longer-term conditioning reference:
+              repeated 3-minute efforts with 1-minute easy recovery. Change gradually; no
+              maximum-effort sprinting or automatic extra hard cardio.
+            </p>
+          </div>
+        </Section>
+      )}
       <div className="schedule-list">
         {program.days.map((d, i) => (
           <div className="schedule-row" key={d.id}>
@@ -101,6 +151,14 @@ export default function Program() {
             </div>
             <div className="schedule-meta">
               <span>{d.duration}</span>
+              <small>
+                {d.exercises.filter((rx) => priorityOf(rx) === 'mandatory').length +
+                  (d.tasks?.filter((t) => t.priority === 'mandatory').length ?? 0)}{' '}
+                mandatory ·{' '}
+                {d.exercises.filter((rx) => priorityOf(rx) === 'optional').length +
+                  (d.tasks?.filter((t) => t.priority === 'optional').length ?? 0)}{' '}
+                optional
+              </small>
               <small>
                 {d.kind === 'strength'
                   ? `${d.exercises.length} exercises · ${d.exercises.reduce((n, p) => n + p.sets, 0)} sets`
@@ -146,7 +204,7 @@ export default function Program() {
       <details className="section training-principles">
         <summary>Training principles</summary>
         <div className="principles-grid">
-          {trainingRules.map((rule, i) => (
+          {(program.readiness ? boxingRules : trainingRules).map((rule, i) => (
             <div className="card" key={rule}>
               <span className="eyebrow">0{i + 1}</span>
               <p>{rule}</p>
@@ -251,7 +309,15 @@ function ProgramEditor({ initial, onSaved }: { initial: ProgramType; onSaved: ()
     e.preventDefault();
     setSaving(true);
     try {
-      const validated = programSchema.parse({ ...p, updatedAt: now() });
+      const validated = programSchema.parse({
+        ...p,
+        days: p.days.map((day) => ({
+          ...day,
+          exercises: priorityOrder(day.exercises),
+          tasks: day.tasks ? priorityOrder(day.tasks) : undefined,
+        })),
+        updatedAt: now(),
+      });
       await db.transaction('rw', [db.programs, db.settings], async () => {
         await db.programs.put(validated);
         await db.settings.update('settings', {
@@ -540,6 +606,23 @@ function ProgramEditor({ initial, onSaved }: { initial: ProgramType; onSaved: ()
                   </Field>
                 ))}
               </div>
+              <Field label="Exercise priority">
+                <select
+                  value={priorityOf(rx)}
+                  onChange={(e) =>
+                    editDay({
+                      exercises: day.exercises.map((x) =>
+                        x.id === rx.id
+                          ? { ...x, priority: e.target.value as 'mandatory' | 'optional' }
+                          : x,
+                      ),
+                    })
+                  }
+                >
+                  <option value="mandatory">Mandatory</option>
+                  <option value="optional">Optional</option>
+                </select>
+              </Field>
               <Field label="Target unit">
                 <select
                   value={rx.unit}
@@ -593,6 +676,7 @@ function ProgramEditor({ initial, onSaved }: { initial: ProgramType; onSaved: ()
                             : 'reps',
                       rest: 120,
                       alternatives: e.alternatives,
+                      priority: 'optional',
                     },
                   ],
                 });
@@ -603,6 +687,122 @@ function ProgramEditor({ initial, onSaved }: { initial: ProgramType; onSaved: ()
             </button>
           </div>
         </>
+      )}
+      {day.tasks && (
+        <div className="form-stack">
+          <h3>Activity priorities</h3>
+          {day.tasks.map((task) => (
+            <div className="card form-stack" key={task.id}>
+              <Field label="Activity prescription">
+                <input
+                  value={task.label}
+                  maxLength={160}
+                  onChange={(e) =>
+                    editDay({
+                      tasks: day.tasks!.map((t) =>
+                        t.id === task.id ? { ...t, label: e.target.value } : t,
+                      ),
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Activity priority">
+                <select
+                  value={task.priority}
+                  onChange={(e) =>
+                    editDay({
+                      tasks: day.tasks!.map((t) =>
+                        t.id === task.id
+                          ? { ...t, priority: e.target.value as 'mandatory' | 'optional' }
+                          : t,
+                      ),
+                    })
+                  }
+                >
+                  <option value="mandatory">Mandatory</option>
+                  <option value="optional">Optional</option>
+                </select>
+              </Field>
+              <Field label="Estimated activity minutes">
+                <input
+                  type="number"
+                  min={0}
+                  max={1440}
+                  value={task.minutes}
+                  onChange={(e) =>
+                    editDay({
+                      tasks: day.tasks!.map((t) =>
+                        t.id === task.id ? { ...t, minutes: +e.target.value } : t,
+                      ),
+                    })
+                  }
+                />
+              </Field>
+              {task.target && (
+                <div className="form-grid">
+                  {(['rounds', 'workSeconds', 'recoverySeconds'] as const).map((key) => (
+                    <Field
+                      key={key}
+                      label={
+                        key === 'rounds'
+                          ? 'Rope target rounds'
+                          : key === 'workSeconds'
+                            ? 'Rope work seconds'
+                            : 'Rope rest seconds'
+                      }
+                    >
+                      <input
+                        type="number"
+                        required
+                        min={key === 'recoverySeconds' ? 0 : 1}
+                        max={key === 'rounds' ? 100 : 3600}
+                        step={1}
+                        value={task.target![key]}
+                        onChange={(e) =>
+                          editDay({
+                            tasks: day.tasks!.map((t) =>
+                              t.id === task.id
+                                ? { ...t, target: { ...t.target!, [key]: +e.target.value } }
+                                : t,
+                            ),
+                          })
+                        }
+                      />
+                    </Field>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {day.intervalPlan && (
+        <div className="form-grid">
+          <h3>Controlled interval prescription</h3>
+          {(['rounds', 'workSeconds', 'recoverySeconds'] as const).map((key) => (
+            <Field
+              label={
+                key === 'rounds'
+                  ? 'Interval rounds'
+                  : key === 'workSeconds'
+                    ? 'Work seconds'
+                    : 'Easy recovery seconds'
+              }
+              key={key}
+            >
+              <input
+                type="number"
+                required
+                min={key === 'recoverySeconds' ? 0 : 1}
+                max={key === 'rounds' ? 100 : 3600}
+                value={day.intervalPlan![key]}
+                onChange={(e) =>
+                  editDay({ intervalPlan: { ...day.intervalPlan!, [key]: +e.target.value } })
+                }
+              />
+            </Field>
+          ))}
+        </div>
       )}
       {(['warmup', 'mobility'] as const).map((key) => (
         <Field

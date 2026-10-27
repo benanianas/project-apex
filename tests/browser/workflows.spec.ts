@@ -11,6 +11,10 @@ const navigate = async (page: Page, label: string) => {
 async function openApp(page: Page) {
   await page.goto('./');
   await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible();
+  // Retain regression coverage for the original template alongside the new default.
+  await navigate(page, 'Program');
+  await page.getByLabel('Active program', { exact: true }).selectOption('apex-original');
+  await navigate(page, 'Today');
 }
 async function startStrength(page: Page) {
   await page.getByRole('button', { name: 'Day 1: Full Body A', exact: true }).click();

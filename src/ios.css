@@ -1873,3 +1873,158 @@ small,
   margin-top: 10px;
   min-height: 44px;
 }
+/* Priority-led training, with previous sets visible before entry. */
+.priority-badge {
+  display: inline-block;
+  border-radius: 6px;
+  padding: 3px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-bottom: 6px;
+  background: #2d3b24;
+  color: #c7e7a6;
+}
+.priority-badge.optional {
+  background: #272d26;
+  color: #a8b1a2;
+}
+.exercise-log > .priority-badge {
+  margin-bottom: 12px;
+}
+.workout-priority-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.2fr;
+  gap: 9px;
+  padding: 13px 0;
+  border-block: 1px solid var(--border);
+  margin: 12px 0;
+}
+.workout-priority-summary strong,
+.workout-priority-summary span {
+  display: block;
+}
+.workout-priority-summary strong {
+  font-size: 17px;
+}
+.workout-priority-summary span {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.workout-priority-summary > p {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  margin: 3px 0 0;
+}
+.day-priority-counts {
+  font-size: 13px;
+  color: var(--accent);
+  margin: 8px 0 12px;
+}
+.screen-today .page-title {
+  margin-bottom: 18px;
+}
+.screen-today .hero-card {
+  padding: 18px;
+}
+.screen-today .hero-card h2 {
+  font-size: 28px;
+}
+.screen-today .hero-top {
+  margin-bottom: 12px;
+}
+.screen-today .hero-meta {
+  margin: 12px 0 10px;
+}
+.previous-performance {
+  margin: 12px 0 17px;
+  padding: 12px;
+  background: #11170f;
+  border: 1px solid #34422d;
+  border-radius: 12px;
+}
+.previous-performance > p:first-child {
+  margin: 0 0 10px;
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.previous-performance time,
+.previous-performance small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.previous-performance table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 0;
+}
+.previous-performance th {
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+}
+.previous-performance td,
+.previous-performance th {
+  padding: 6px 3px;
+  border-bottom: 1px solid var(--border);
+}
+.previous-performance .previous-advice {
+  font-size: 11px;
+  line-height: 1.5;
+  color: #b4c6a5;
+  margin-bottom: 0;
+}
+.previous-empty {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 12px 0;
+}
+.set-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.set-fieldset:disabled {
+  opacity: 0.45;
+}
+.skip-status {
+  font-size: 12px;
+  color: #e5c295;
+}
+.exercise-priority-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.training-tasks {
+  display: grid;
+  gap: 12px;
+}
+.training-task h3 {
+  font-size: 15px;
+  line-height: 1.5;
+}
+.training-task .button-row {
+  margin-top: 10px;
+}
+.task-preview > div {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.task-preview > div:last-child {
+  border: 0;
+}
+.task-preview p {
+  margin: 0;
+  font-size: 14px;
+}
+.readiness-note {
+  margin: 14px 2px;
+}

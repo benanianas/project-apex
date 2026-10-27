@@ -46,6 +46,21 @@ export const exerciseSchema = z.object({
   custom: z.boolean(),
   archived: z.boolean().default(false),
 });
+export const prioritySchema = z.enum(['mandatory', 'optional']);
+export const skipSchema = z.object({ reason: z.string().trim().min(1).max(1000), at: timestamp });
+export const intervalSchema = z.object({
+  rounds: z.number().int().min(1).max(100),
+  workSeconds: z.number().int().min(1).max(3600),
+  recoverySeconds: z.number().int().min(0).max(3600),
+});
+export const taskSchema = z.object({
+  id,
+  label: name,
+  kind: z.enum(['warmup', 'mobility', 'cardio', 'rope', 'cooldown']),
+  priority: prioritySchema,
+  minutes: nonnegative,
+  target: intervalSchema.optional(),
+});
 export const prescriptionSchema = z
   .object({
     id,
@@ -56,6 +71,7 @@ export const prescriptionSchema = z
     unit: z.enum(['reps', 'seconds', 'meters', 'submax']),
     rest: z.number().int().min(0).max(3600),
     alternatives: z.array(id).max(30),
+    priority: prioritySchema.optional(),
   })
   .refine((p) => p.max >= p.min, 'Upper target must be at least the lower target');
 export const daySchema = z.object({
@@ -81,6 +97,10 @@ export const daySchema = z.object({
       'Cardio target must have a positive minimum and ordered range',
     )
     .nullable(),
+  tasks: z.array(taskSchema).max(80).optional(),
+  intervalPlan: intervalSchema.optional(),
+  intervalActive: z.boolean().optional(),
+  powerOption: z.boolean().optional(),
   weekday: z.number().int().min(0).max(6).nullable(),
 });
 export const programSchema = z.object({
@@ -91,6 +111,9 @@ export const programSchema = z.object({
   startDate: localDate,
   archived: z.boolean(),
   days: z.array(daySchema).min(1).max(60),
+  readiness: z.object({ intervals: z.boolean(), jumps: z.boolean() }).optional(),
+  revision: z.string().max(100).optional(),
+  freshHistory: z.boolean().optional(),
   updatedAt: timestamp,
 });
 export const setSchema = z.object({
@@ -110,6 +133,8 @@ export const performanceSchema = z.object({
   exercise: exerciseSchema,
   prescription: prescriptionSchema,
   sets: z.array(setSchema).max(100),
+  skipped: skipSchema.optional(),
+  equipmentLabel: z.string().max(160).optional(),
 });
 export const sessionSchema = z.object({
   id,
@@ -122,27 +147,39 @@ export const sessionSchema = z.object({
   finishedAt: timestamp.nullable(),
   status: z.enum(['draft', 'completed']),
   performances: z.array(performanceSchema).max(100),
+  daySnapshot: daySchema.optional(),
+  historyProgramId: id.optional(),
+  taskStates: z
+    .record(z.string(), z.object({ done: z.boolean(), skipped: skipSchema.optional() }))
+    .optional(),
+  recovery: z.enum(['unknown', 'good', 'limited', 'poor']).optional(),
   warmup: z.array(text).max(40),
   mobility: z.array(text).max(40),
   checklist: z.record(z.string(), z.boolean()),
   notes: text,
   updatedAt: timestamp,
 });
-export const cardioSchema = z.object({
-  id,
-  sessionId: id.nullable(),
-  date: localDate,
-  activity: name,
-  minutes: z.number().finite().positive().max(1440),
-  speedKmh: opt,
-  distanceKm: opt,
-  incline: z.number().min(-30).max(40).nullable(),
-  rpe: z.number().min(1).max(10).nullable(),
-  heartRate: z.number().int().min(20).max(250).nullable(),
-  notes: text,
-  completed: z.boolean(),
-  updatedAt: timestamp,
-});
+export const cardioSchema = z
+  .object({
+    id,
+    sessionId: id.nullable(),
+    date: localDate,
+    activity: name,
+    minutes: z.number().finite().positive().max(1440),
+    intervals: intervalSchema.optional(),
+    speedKmh: opt,
+    distanceKm: opt,
+    incline: z.number().min(-30).max(40).nullable(),
+    rpe: z.number().min(1).max(10).nullable(),
+    heartRate: z.number().int().min(20).max(250).nullable(),
+    notes: text,
+    completed: z.boolean(),
+    updatedAt: timestamp,
+  })
+  .refine(
+    (c) => !c.intervals || c.minutes * 60 >= c.intervals.rounds * c.intervals.workSeconds,
+    'Duration cannot be shorter than active interval work',
+  );
 export const ropeSchema = z
   .object({
     id,
@@ -176,6 +213,7 @@ export const settingsSchema = z.object({
   backupReminder: z.boolean(),
   lastBackupAt: timestamp.nullable(),
   compact: z.boolean(),
+  appliedUpdates: z.array(z.string().max(100)).max(100).optional(),
 });
 export const timerSchema = z.object({
   id: z.literal('rest'),
@@ -185,6 +223,7 @@ export const timerSchema = z.object({
 });
 export type Exercise = z.infer<typeof exerciseSchema>;
 export type Prescription = z.infer<typeof prescriptionSchema>;
+export type TrainingTask = z.infer<typeof taskSchema>;
 export type TrainingDay = z.infer<typeof daySchema>;
 export type Program = z.infer<typeof programSchema>;
 export type SetRecord = z.infer<typeof setSchema>;

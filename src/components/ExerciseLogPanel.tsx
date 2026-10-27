@@ -1,11 +1,14 @@
 import { useRef, useState } from 'react';
 import { ArrowUpRight, Undo2 } from 'lucide-react';
 import DiscardWorkoutDialog from './DiscardWorkoutDialog';
+import SkipItemDialog from './SkipItemDialog';
 import { db, discardDraftSession, saveSession } from '../storage/db';
 import { now, type Exercise, type Performance, type SetRecord } from '../domain/model';
 import { prepareExerciseSession } from '../domain/exerciseSession';
 import { setProblem, workingSets } from '../domain/calculations';
-import { go, Section, useData } from './ui';
+import { Field, go, Section, useData } from './ui';
+import PreviousPerformance from './PreviousPerformance';
+import { priorityOf, sessionProgress } from '../domain/training';
 import SetEditor from './SetEditor';
 import RestTimer, { startRest } from './RestTimer';
 
@@ -15,7 +18,10 @@ export default function ExerciseLogPanel({ exercise }: { exercise: Exercise }) {
     () =>
       [...sessions]
         .filter(
-          (s) => s.status === 'draft' && s.performances.some((p) => p.exercise.id === exercise.id),
+          (s) =>
+            s.status === 'draft' &&
+            s.programId === program.id &&
+            s.performances.some((p) => p.exercise.id === exercise.id),
         )
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ??
       prepareExerciseSession(exercise, program, sessions, settings.selectedDayId),
@@ -28,6 +34,7 @@ export default function ExerciseLogPanel({ exercise }: { exercise: Exercise }) {
   const revision = useRef(0);
   const discarding = useRef(false);
   const [canceling, setCanceling] = useState(false);
+  const [skipping, setSkipping] = useState(false);
   const [state, setState] = useState(
     sessions.some((s) => s.id === initial.id) ? 'Saved on device' : 'Ready to log',
   );
@@ -91,12 +98,16 @@ export default function ExerciseLogPanel({ exercise }: { exercise: Exercise }) {
       await queue.current;
       if (!(await db.sessions.get(initial.id))) await saveSession(initial);
       if (individual) {
-        if (!workingSets(current.current).length)
-          throw new Error('Complete at least one working set before finishing.');
+        if (!workingSets(current.current).length && !current.current.skipped)
+          throw new Error('Log a working set or record a reason for skipping before finishing.');
         const saved = await db.sessions.get(initial.id);
         if (!saved) throw new Error('Session could not be found. Please retry saving.');
         await saveSession({ ...saved, status: 'completed', finishedAt: now() });
-        notify('Session complete. Your progress is updated.');
+        notify(
+          sessionProgress(saved).essential === 'partial'
+            ? 'Session saved with essential work partially completed.'
+            : 'Session complete. Your progress is updated.',
+        );
         go('progress');
       } else go(`workout/${initial.id}/${exercise.id}`);
     } catch (error) {
@@ -128,6 +139,9 @@ export default function ExerciseLogPanel({ exercise }: { exercise: Exercise }) {
       }
     >
       <div className="exercise-log card exercise-inline-log">
+        <span className={`priority-badge ${priorityOf(p.prescription)}`}>
+          {priorityOf(p.prescription) === 'mandatory' ? 'Mandatory' : 'Optional'}
+        </span>
         <div className="inline-log-context">
           <span>{individual ? 'Single-exercise session' : initial.title}</span>
           <span>{initial.date}</span>
@@ -164,22 +178,59 @@ export default function ExerciseLogPanel({ exercise }: { exercise: Exercise }) {
             Undo deletion
           </button>
         )}
-        <SetEditor
+        <PreviousPerformance
           performance={p}
-          editSet={editSet}
-          complete={complete}
-          updatePerformance={(fn) => persist(fn(current.current))}
-          removeSet={(id) => {
-            setUndo(structuredClone(current.current));
-            persist({ ...current.current, sets: current.current.sets.filter((s) => s.id !== id) });
-          }}
+          sessionId={initial.id}
+          programId={initial.historyProgramId}
         />
+        {p.skipped && (
+          <p className="skip-status">
+            Skipped: {p.skipped.reason}.{' '}
+            <button onClick={() => persist({ ...current.current, skipped: undefined })}>
+              Undo skip
+            </button>
+          </p>
+        )}
+        <fieldset className="set-fieldset" disabled={!!p.skipped}>
+          <SetEditor
+            performance={p}
+            editSet={editSet}
+            complete={complete}
+            updatePerformance={(fn) => persist(fn(current.current))}
+            removeSet={(id) => {
+              setUndo(structuredClone(current.current));
+              persist({
+                ...current.current,
+                sets: current.current.sets.filter((s) => s.id !== id),
+              });
+            }}
+          />
+        </fieldset>
+        {!p.skipped && (
+          <button className="text-button" onClick={() => setSkipping(true)}>
+            Skip exercise
+          </button>
+        )}
+        <details className="inline-options">
+          <summary>Equipment details</summary>
+          <Field label="Machine / equipment label (optional)">
+            <input
+              maxLength={160}
+              value={p.equipmentLabel ?? ''}
+              placeholder="For example: cable machine A"
+              onChange={(e) => persist({ ...current.current, equipmentLabel: e.target.value })}
+            />
+          </Field>
+          <p className="small muted">
+            Use the same label each time. Different labels keep previous-set references separate.
+          </p>
+        </details>
         <div className="compact-timer">
           <RestTimer />
         </div>
         <button
           className="primary full"
-          disabled={busy || (individual && !workingSets(p).length)}
+          disabled={busy || (individual && !workingSets(p).length && !p.skipped)}
           onClick={() => void continueWorkout()}
         >
           {busy ? 'Saving…' : individual ? 'Finish session' : 'Open workout'}
@@ -199,6 +250,16 @@ export default function ExerciseLogPanel({ exercise }: { exercise: Exercise }) {
             title={initial.title}
             onClose={() => setCanceling(false)}
             onDiscard={discard}
+          />
+        )}
+        {skipping && (
+          <SkipItemDialog
+            name={p.exercise.name}
+            onClose={() => setSkipping(false)}
+            onSkip={(reason) => {
+              persist({ ...current.current, skipped: { reason, at: now() } });
+              setSkipping(false);
+            }}
           />
         )}
       </div>

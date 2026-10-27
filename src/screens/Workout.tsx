@@ -1,5 +1,10 @@
 import { useRef, useState } from 'react';
 import { Plus, Check, Undo2, ArrowUpRight, ChevronLeft, ChevronRight } from 'lucide-react';
+import PreviousPerformance from '../components/PreviousPerformance';
+import WorkoutProgress from '../components/WorkoutProgress';
+import WorkoutTasks from '../components/WorkoutTasks';
+import SkipItemDialog from '../components/SkipItemDialog';
+import { priorityOf, sessionProgress } from '../domain/training';
 import SetEditor from '../components/SetEditor';
 import DiscardWorkoutDialog from '../components/DiscardWorkoutDialog';
 import { discardDraftSession, saveSession } from '../storage/db';
@@ -12,15 +17,7 @@ import {
   type Session,
   type SetRecord,
 } from '../domain/model';
-import {
-  exerciseHistory,
-  fromKg,
-  progression,
-  rounded,
-  sessionVolume,
-  setProblem,
-  workingSets,
-} from '../domain/calculations';
+import { fromKg, rounded, sessionVolume, setProblem, workingSets } from '../domain/calculations';
 import { findGuide } from '../data/exercises';
 import ExerciseDiagram from '../components/ExerciseDiagram';
 import RestTimer, { startRest } from '../components/RestTimer';
@@ -48,6 +45,7 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
   const [saveState, setSaveState] = useState('Saved on device');
   const [failed, setFailed] = useState(false);
   const [modal, setModal] = useState<'add' | 'cardio' | 'rope' | 'finish' | 'discard' | null>(null);
+  const [skipping, setSkipping] = useState<Performance>();
   const [undo, setUndo] = useState<Session | null>(null);
   const [picker, setPicker] = useState(exercises.find((e) => e.category !== 'mobility')?.id ?? '');
   const [busy, setBusy] = useState(false);
@@ -127,6 +125,7 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
         id: uid(),
         exerciseId: e.id,
         sets: 3,
+        priority: 'optional',
         min: e.type === 'carry' || e.type === 'timed' ? 30 : 8,
         max: e.type === 'carry' || e.type === 'timed' ? 45 : 12,
         unit:
@@ -152,14 +151,30 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
       const valid =
         s.kind !== 'strength' ||
         s.performances.some((p) => p.sets.some((x) => x.done && !x.warmup));
-      if (!valid)
-        throw new Error('Complete at least one working set before finishing. Your draft is safe.');
-      if (s.kind === 'cardio' && !cardio.some((c) => c.sessionId === s.id && c.completed))
+      const skipped =
+        s.performances.some((p) => p.skipped) ||
+        Object.values(s.taskStates ?? {}).some((t) => t.skipped);
+      if (!valid && !skipped)
+        throw new Error(
+          'Log a working set or record a reason for skipping before finishing. Your draft is safe.',
+        );
+      if (
+        s.kind === 'cardio' &&
+        !skipped &&
+        !cardio.some((c) => c.sessionId === s.id && c.completed)
+      )
         throw new Error(
           'Save a completed cardio activity before finishing this conditioning session.',
         );
       await saveSession({ ...s, status: 'completed', finishedAt: s.finishedAt ?? now() });
-      notify('Session complete. Every effort counts.');
+      const progress = sessionProgress(s, cardio, rope);
+      notify(
+        progress.essential === 'partial'
+          ? 'Session saved with essential work partially completed.'
+          : progress.essential === 'none'
+            ? 'Optional session saved. No mandatory training today.'
+            : 'Session saved. Essential work complete; optional work is your choice.',
+      );
       go('progress');
     } catch (e) {
       report(e);
@@ -180,6 +195,18 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
       throw error;
     }
   }
+  const recent = sessions
+    .filter(
+      (s) =>
+        s.id !== session.id &&
+        s.status === 'completed' &&
+        (!session.historyProgramId || s.programId === session.historyProgramId),
+    )
+    .sort((a, b) => b.date.localeCompare(a.date) || b.startedAt.localeCompare(a.startedAt))
+    .slice(0, 3);
+  const limitedRecovery = recent.filter(
+    (s) => s.recovery === 'limited' || s.recovery === 'poor',
+  ).length;
   const completedSets = session.performances.reduce((n, p) => n + workingSets(p).length, 0);
   const total = session.performances.reduce(
     (n, p) => n + p.sets.filter((s) => !s.warmup).length,
@@ -202,6 +229,14 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
         <button className="danger" onClick={() => persist(current.current)}>
           Retry saving current entries
         </button>
+      )}
+      <WorkoutProgress session={session} />
+      {limitedRecovery >= 2 && (
+        <p className="small muted">
+          Recovery was limited in {limitedRecovery} of the last {recent.length} sessions. Prioritize
+          essential work, consider skipping accessories, and keep conditioning easy until recovery
+          improves. One difficult session alone does not trigger this reminder.
+        </p>
       )}
       <details className="session-summary">
         <summary>
@@ -239,6 +274,14 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
             Undo deletion
           </button>
         </div>
+      )}
+      {session.daySnapshot?.tasks && (
+        <WorkoutTasks
+          session={session}
+          onChange={update}
+          onCardio={() => setModal('cardio')}
+          onRope={() => setModal('rope')}
+        />
       )}
       {session.warmup.length > 0 && (
         <details className="card workout-warmup">
@@ -308,18 +351,14 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
         </div>
       )}
       {session.performances.map((p, index) => {
-        const hist = exerciseHistory(
-          p.exercise.id,
-          sessions.filter((s) => s.id !== session.id),
-        );
-        const last = hist.at(-1)?.performance;
-        const prior = hist.at(-2)?.performance;
-        const advice = last ? progression(last, prior, settings.loadIncrementKg) : null;
         const load = ['resistance', 'assisted', 'weighted-bodyweight', 'carry'].includes(
           p.exercise.type,
         );
         return (
           <section className="exercise-log card" key={p.id} hidden={p.id !== focused?.id}>
+            <span className={`priority-badge ${priorityOf(p.prescription)}`}>
+              {priorityOf(p.prescription) === 'mandatory' ? 'Mandatory' : 'Optional'}
+            </span>
             <div className="exercise-log-heading">
               <span className="row-number">{String(index + 1).padStart(2, '0')}</span>
               <ExerciseDiagram exercise={p.exercise} small />
@@ -347,11 +386,13 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
               </div>
             </div>
             <p className="muted small log-guidance">
-              {p.exercise.category === 'heavy'
-                ? 'Aim for 2–3 RIR.'
-                : p.exercise.category === 'isolation'
-                  ? 'Aim for 0–2 RIR.'
-                  : 'Aim for 1–3 RIR.'}{' '}
+              {p.exercise.id === 'push-up'
+                ? 'Keep 2–3 reps short of technical failure.'
+                : p.exercise.category === 'heavy'
+                  ? 'Aim for 2–3 RIR.'
+                  : p.exercise.category === 'isolation'
+                    ? 'Aim for 0–2 RIR.'
+                    : 'Aim for 1–3 RIR.'}{' '}
               {p.exercise.type === 'assisted'
                 ? 'Log machine assistance; lower assistance is harder.'
                 : p.exercise.loadMode === 'per-hand'
@@ -363,48 +404,95 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
                 ? 'One row covers both sides; enter reps performed on each side.'
                 : ''}
             </p>
-            {last && (
-              <div className="previous-line">
-                Previous:{' '}
-                {workingSets(last)
-                  .map(
-                    (s) =>
-                      `${s.loadKg !== null ? `${rounded(fromKg(s.loadKg, settings.weightUnit))}${settings.weightUnit} × ` : ''}${s.reps ?? s.seconds ?? s.meters ?? '—'}${s.seconds !== null ? 's' : ''}`,
-                  )
-                  .join(' · ')}
-              </div>
-            )}
-            <SetEditor
+            <PreviousPerformance
               performance={p}
-              editSet={(sid, patch) => editSet(p.id, sid, patch)}
-              complete={complete}
-              removeSet={(sid) =>
-                remove(() =>
-                  updatePerformance(p.id, (old) => ({
-                    ...old,
-                    sets: old.sets.filter((s) => s.id !== sid),
-                  })),
-                )
-              }
-              updatePerformance={(fn) => updatePerformance(p.id, fn)}
+              sessionId={session.id}
+              programId={session.historyProgramId}
             />
-            {advice && (
-              <details className="advice">
-                <summary>{advice.title}</summary>
-                <p>
-                  {advice.detail}
-                  {advice.nextKg !== undefined
-                    ? ` Suggested next load: ${rounded(fromKg(advice.nextKg, settings.weightUnit), 2)} ${settings.weightUnit}${p.exercise.loadMode === 'per-hand' ? ' per hand' : ''}.`
-                    : ''}
-                </p>
-              </details>
+            {p.skipped && (
+              <p className="skip-status">
+                Skipped: {p.skipped.reason}. Any completed sets remain recorded.
+              </p>
             )}
+            <fieldset className="set-fieldset" disabled={!!p.skipped}>
+              <SetEditor
+                performance={p}
+                editSet={(sid, patch) => editSet(p.id, sid, patch)}
+                complete={complete}
+                removeSet={(sid) =>
+                  remove(() =>
+                    updatePerformance(p.id, (old) => ({
+                      ...old,
+                      sets: old.sets.filter((s) => s.id !== sid),
+                    })),
+                  )
+                }
+                updatePerformance={(fn) => updatePerformance(p.id, fn)}
+              />
+            </fieldset>
+            <div className="exercise-priority-controls">
+              {p.skipped ? (
+                <button
+                  className="text-button"
+                  onClick={() => updatePerformance(p.id, (old) => ({ ...old, skipped: undefined }))}
+                >
+                  Undo skip
+                </button>
+              ) : (
+                <button className="text-button" onClick={() => setSkipping(p)}>
+                  Skip exercise
+                </button>
+              )}
+              <span className="small muted">
+                {workingSets(p).length}/{p.prescription.sets} sets complete
+              </span>
+            </div>
             <details className="session-adjust">
               <summary>Change this exercise for this session</summary>
               <p className="small muted">
                 The program template and earlier logs stay as recorded. Substitution starts empty
                 sets.
               </p>
+              <Field label="Priority for this session">
+                <select
+                  value={priorityOf(p.prescription)}
+                  onChange={(e) => {
+                    const performances = current.current.performances.map((old) =>
+                      old.id === p.id
+                        ? {
+                            ...old,
+                            prescription: {
+                              ...old.prescription,
+                              priority: e.target.value as 'mandatory' | 'optional',
+                            },
+                          }
+                        : old,
+                    );
+                    update({
+                      performances: [...performances].sort(
+                        (a, b) =>
+                          Number(priorityOf(a.prescription) === 'optional') -
+                          Number(priorityOf(b.prescription) === 'optional'),
+                      ),
+                    });
+                  }}
+                >
+                  <option value="mandatory">Mandatory</option>
+                  <option value="optional">Optional</option>
+                </select>
+              </Field>
+              <Field
+                label="Machine / equipment label (optional)"
+                hint="Use the same label each time. Different labels keep previous-performance references separate."
+              >
+                <input
+                  maxLength={160}
+                  value={p.equipmentLabel ?? ''}
+                  onChange={(e) =>
+                    updatePerformance(p.id, (old) => ({ ...old, equipmentLabel: e.target.value }))
+                  }
+                />
+              </Field>
               <select
                 aria-label={`Replace ${p.exercise.name}`}
                 value={p.exercise.id}
@@ -414,6 +502,8 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
                   updatePerformance(p.id, (old) => ({
                     ...old,
                     exercise: structuredClone(ex),
+                    equipmentLabel: undefined,
+                    skipped: undefined,
                     prescription: {
                       ...old.prescription,
                       exerciseId: ex.id,
@@ -439,12 +529,18 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
               <button
                 className="danger text-button"
                 onClick={() =>
-                  remove(() =>
-                    update({ performances: session.performances.filter((ep) => ep.id !== p.id) }),
-                  )
+                  session.status === 'draft' && priorityOf(p.prescription) === 'mandatory'
+                    ? setSkipping(p)
+                    : remove(() =>
+                        update({
+                          performances: session.performances.filter((ep) => ep.id !== p.id),
+                        }),
+                      )
                 }
               >
-                Remove exercise
+                {session.status === 'draft' && priorityOf(p.prescription) === 'mandatory'
+                  ? 'Skip mandatory exercise'
+                  : 'Remove exercise'}
               </button>
             </details>
           </section>
@@ -473,7 +569,7 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
           Add exercise to this session
         </button>
       )}
-      {session.kind === 'cardio' && (
+      {session.kind === 'cardio' && !session.daySnapshot?.tasks && (
         <Section title="Conditioning">
           <div className="two-grid">
             <div className="card">
@@ -531,6 +627,17 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
         </Section>
       )}
       <div className="card section">
+        <Field label="Recovery today (optional)">
+          <select
+            value={session.recovery ?? 'unknown'}
+            onChange={(e) => update({ recovery: e.target.value as Session['recovery'] })}
+          >
+            <option value="unknown">Not recorded</option>
+            <option value="good">Good</option>
+            <option value="limited">Limited / tired</option>
+            <option value="poor">Poor</option>
+          </select>
+        </Field>
         <Field label="Session notes">
           <textarea
             value={session.notes}
@@ -553,6 +660,16 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
           <Check size={18} />
         </button>
       </div>
+      {skipping && (
+        <SkipItemDialog
+          name={skipping.exercise.name}
+          onClose={() => setSkipping(undefined)}
+          onSkip={(reason) => {
+            updatePerformance(skipping.id, (p) => ({ ...p, skipped: { reason, at: now() } }));
+            setSkipping(undefined);
+          }}
+        />
+      )}
       {modal === 'discard' && (
         <DiscardWorkoutDialog
           title={session.title}
@@ -598,7 +715,11 @@ function Logger({ initial, exerciseId }: { initial: Session; exerciseId?: string
               ? `${completedSets} of ${total} working sets are complete. Incomplete sets remain in the record and are excluded from analytics.`
               : 'Your saved activities and mobility checklist will be retained.'}
           </p>
-          <p className="muted">You can edit this session later in Progress.</p>
+          <WorkoutProgress session={session} />
+          <p className="muted">
+            Optional exercises may remain. Missing or skipped mandatory work is saved as partially
+            completed. You can edit this session later in Progress.
+          </p>
           <button className="primary" disabled={busy || failed} onClick={() => void finish()}>
             {busy ? 'Saving…' : 'Confirm finish'}
           </button>
